@@ -1,8 +1,6 @@
 Scripts from **Multiple origins of a frameshift insertion in a mitochondrial gene in birds and turtles**
 Sergio Andreu-Sanchez,, Wanjun Chen, Josefin Stiller, Guojie Zhang.
 
-All scripts here presented were written by S. Andreu-Sanchez.
-
 
 The scripts are divided in three parts:
 1. Preparation of the multiple sequence alignment file and table with infomation on position 174. This can be achieved by running **Prepare_dataset.sh**. This script is to be run using three sets of gbf files, one for Refseq records, other for the whole genbank and a third for records belonging to the B10K project.
