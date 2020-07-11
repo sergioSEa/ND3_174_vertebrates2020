@@ -191,6 +191,120 @@ Ancestral_state = function(Path_data = "Diapsida_table.tsv"){
  return(list(Data_birds, Data_Passeriformes))  
 }
 
+Ancestral_state_parsimony = unction(Path_data = "Diapsida_table.tsv"){
+  dataset = read_tsv(Path_data,col_names=F)
+  Tree3 = phyloseq::read_tree("Total_tree.tree")
+  
+  #If any UNVERIFIED record present, remove
+  dataset %>% filter(! grepl("UNVERIFIED",X1)) -> dataset
+  #Homogenize records
+  dataset %>% filter(X1 %in% Tree3$tip.label) -> dataset
+  keep.tip(Tree3, dataset$X1) -> Tree3
+  
+  #Ancestral reconstruction
+  
+  dataset %>% arrange(X1) %>% filter(! X2 == "n") %>% filter(! is.na(X2)) -> dataset
+  keep.tip(Tree3, dataset$X1) -> Tree3
+  states = dataset$X2
+  
+  n = match(Tree3$tip.label,dataset$X1)
+  
+  #####Change encoding for package
+  states = states[n]
+  states[states=="-"]=1
+  states[!states=="1"]=2
+  
+  states = as.integer(states)
+  Tree3$edge.length = NULL #Otol tree has 0s in the branch lengths. The model fails if that is the case.
+
+  reconstruction = castor::hsp_max_parsimony(tree = Tree3,tip_states = states)
+  #All likelihoods
+  Likelihoods = reconstruction$likelihoods
+  
+  
+  reconstruction2 = castor::hsp_mk_model(tree = Tree3,tip_states = states, rate_model="ER",Nthreads = 3)
+  
+  #All likelihoods
+  Likelihoods = reconstruction$likelihoods
+  Likelihoods_mk = reconstruction2$likelihoods
+  #Looking for Likelihoods only on nodes, positions after the leafs
+  leaf_size = length(Tree3$tip.label)
+  LL_nodes = Likelihoods[(length(states)+1):dim(Likelihoods)[1],]
+  LL_nodes_mk = Likelihoods_mk[(length(states)+1):dim(Likelihoods_mk)[1],]
+  
+  #Cases were the 0.9 threshold does not agree with parsimony 30/3091
+  as_tibble(LL_nodes_mk) %>% mutate(V1 = ifelse(V1 > 0.9, 1, V1), V1 = ifelse(V1 < 0.1, 0, V1),V2 = ifelse(V2 > 0.9, 1, V2), V2 = ifelse(V2 < 0.1, 0, V2) ) -> hsp_check
+  as_tibble(LL_nodes) -> parsimony_check
+  sum((hsp_check$V1 == parsimony_check$V1) == F)
+  
+  
+  ############################################################################
+  #########Find all cases where transitions happen in birds and turtles#######
+  ###########################################################################
+  find_transitions = function(Parent_node,threshold, STATES=c("-", "ATGC"), Like = Likelihoods){
+    Transition =vector()
+    #Get all descendants from a given node
+    Desc = sort(c(Descendants(Tree3, Parent_node, type = "all"),Parent_node))
+    #Get P for all those descendents
+    LLH = Like[Desc,]
+    as_tibble(LLH) %>% mutate(N=Desc) -> LLH
+    #Go descendant by descendant and check if current state did change from its closest ancestor
+    for (n in Desc){
+      Node = Ancestors(Tree3,n)
+      if (length(Node) == 0){ next}
+      Node = Node[1]
+      Prob = filter(LLH,N==n)
+      Prob_ancest = filter(LLH,N==Node)
+      if (dim(Prob_ancest)[1] == 0){ next}
+      P1 =0
+      P2 =0
+      for (m in seq(1:length(STATES))){
+        P1_a = Prob[m]
+        P2_a = Prob_ancest[m]
+        if (P1_a > P1){
+          P1 = P1_a
+          state = STATES[m]
+        }
+        if (P2_a > P2){
+          P2 = P2_a
+          state_a = STATES[m]
+        }
+      }
+      if (P1 < threshold){ next }
+      if (P2 < threshold){ next }
+      if(! state_a == state ){
+        if(n > length(Tree3$tip.label)){
+          Name = Tree3$node.label[n-length(Tree3$tip.label)]
+        }else{ Name = Tree3$tip.label[n]}
+        Transition = c(Transition, paste(c(state_a,state),collapse=""))
+        #if(n<length(Tree3$tip.label)+1){
+          print(paste(c("Transition",state_a, "to", state, "in node",n, "named", Name),collapse=" "))}
+      #}
+      
+    }
+    return(Transition)
+  }
+  Ancestor_all = which(grepl("mrcaott59ott1662", Tree3$node.label))
+  Turtle = which(grepl("Testudines",Tree3$node.label))  #Turtles, Testudines
+  Aves = which(grepl("Aves", Tree3$node.label)) #Aves
+  Passeriformes = which(grepl("Passeriformes", Tree3$node.label))
+  
+  t1 = find_transitions(Parent_node = Turtle + leaf_size, threshold = 0.9)
+  lapply(t1, FUN = function(x){ substr(x,1,1) == "-" }) %>% as_vector() -> gains ; sum(gains) ; length(t1) - sum(gains)
+  
+  t12 = find_transitions(Parent_node = Turtle + leaf_size, threshold = 0.9, Like =Likelihoods_mk)
+  #Turtles have the same transitions
+  t2 = find_transitions(Parent_node = Aves + leaf_size, threshold = 0.9)
+  lapply(t2, FUN = function(x){ substr(x,1,1) == "-" }) %>% as_vector() -> gains ; sum(gains)  ; length(t2) - sum(gains)
+  
+  t22 = find_transitions(Parent_node = Aves + leaf_size, threshold = 0.9, Like=Likelihoods_mk)
+  #Birds have only 5 transitions which are different
+  
+  #All transitions
+  t3 = find_transitions(Parent_node = Ancestor_all + leaf_size, threshold = 0.9)
+  lapply(t3, FUN = function(x){ substr(x,1,1) == "-" }) %>% as_vector() -> gains ; sum(gains) ; length(t3) - sum(gains)
+  
+}
 
 
 Frequency_insertion_bird_order = function(Data_birds, Data_Passeriformes){
