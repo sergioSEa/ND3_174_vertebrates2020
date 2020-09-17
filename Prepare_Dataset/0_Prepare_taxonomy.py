@@ -5,7 +5,7 @@ def find_taxa(Accession):
 	P = ""
 	found = False
 	taxonomy = "unknwon"
-	for entry in Path("NCBI_SEQ/gbs").glob(Accession + ".[1-9].gb"):
+	for entry in Path("../NCBI_SEQ/gbs").glob(Accession + ".[1-9].gb"):
 		found = True
 		with open(entry) as handle:
 			S = SeqIO.parse(handle, "genbank")
@@ -32,7 +32,7 @@ def find_taxa(Accession):
 	if found == True:
 		return(taxonomy)	
 
-	for entry in Path("NCBI_SEQ/complete_gbs").glob(Accession + ".*.gb"):
+	for entry in Path("../NCBI_SEQ/complete_gbs").glob(Accession + ".*.gb"):
 		with open(entry) as handle:
 			S = SeqIO.parse(handle, "genbank")
 			for entry in S:
@@ -56,12 +56,21 @@ def find_taxa(Accession):
 						taxonomy = "unknown"
 	return(taxonomy)
 
+dic_findings = {"ND3_GenBank": {}, "ND3_RefSeq_genes.fa":{}}
+for FILE in ["ND3_GenBank", "ND3_RefSeq_genes.fa"]:
+	with open("Fasta_generation/"+FILE) as F:
+		for line in F:
+			if line[0] ==">":
+				acc = line.rstrip().split("-")[1]	
+				tax = find_taxa(acc)
+				dic_findings[FILE][line[1:-1]] = tax
+with open("Fasta_generation/Taxonomy_Table.tsv", "w") as O:
+	for Option in dic_findings:
+		if "GenBank" in Option: Option_n = "GenBank"
+		else: Option_n = "RefSeq"
+		for Organism in dic_findings[Option]:
+			Taxa = dic_findings[Option][Organism]
+			LINE = "{O}\t{Taxa}\t{Source}\n".format(O=Organism, Taxa=Taxa, Source=Option)
+			O.write(LINE)
 
 
-with open("ND3_genes.fa") as F:
-#with open("ND3_complete_genes.fa") as F:
-	for line in F:
-		if line[0] ==">":
-			acc = line.rstrip().split("-")[1]	
-			tax = find_taxa(acc)
-			print(line[1:-1],tax)

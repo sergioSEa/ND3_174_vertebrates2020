@@ -24,21 +24,26 @@ library(Biostrings)
 library(ggrepel)
 
 
-
-Ancestral_state = function(Path_data = "Diapsida_table.tsv"){
+Ancestral_state = function(Path_data = "Diapsida_table.tsv", Path_tree="Total_tree.tree"){
   #Dataset needed. Table of states and phylogenetic tree
   dataset = read_tsv(Path_data,col_names=F)
-  Tree3 = phyloseq::read_tree("Total_tree.tree")
+  Tree3 = ape::read.tree(Path_tree)
   
+  print("Filtering out species from dataset not found in the tree")
   #If any UNVERIFIED record present, remove
   dataset %>% filter(! grepl("UNVERIFIED",X1)) -> dataset
   #Homogenize records
+  print(paste(c("Filtered records:",dim(filter(dataset, ! X1 %in% Tree3$tip.label))[1]), collapse= " "))
   dataset %>% filter(X1 %in% Tree3$tip.label) -> dataset
   keep.tip(Tree3, dataset$X1) -> Tree3
+  
   
   ##############################################
   #######Ancestral state reconstruction#########
   ##############################################
+  
+  print("Filtering ambiguous status at ND3-174")
+  print(paste(c("Filtered records:",dim(filter(dataset, (X2 == "n" | is.na(X2))))[1]),collapse=" "))
   
   dataset %>% arrange(X1) %>% filter(! X2 == "n") %>% filter(! is.na(X2)) -> dataset
   keep.tip(Tree3, dataset$X1) -> Tree3
@@ -47,6 +52,7 @@ Ancestral_state = function(Path_data = "Diapsida_table.tsv"){
   n = match(Tree3$tip.label,dataset$X1)
   
   #####Change encoding for package
+  print("Fitting a 5 state model with a ML equal-rate params")
   states = states[n]
   states[states=="-"]=1
   states[states=="a"]=2
@@ -78,6 +84,13 @@ Ancestral_state = function(Path_data = "Diapsida_table.tsv"){
   Testudines4 = which(grepl("mrcaott2982ott235762",Tree3$node.label))
   Testudines5 = which(grepl("mrcaott3697ott810244",Tree3$node.label))
   Testudines6 = which(grepl("mrcaott59ott14158",Tree3$node.label))
+  Birds_and_Croco = which(grepl("mrcaott246ott31216", Tree3$node.label))
+  
+  print("Assessed Likelihood at each clade ancestor")
+  colnames(Likelihoods) = c("-","a","t","c","g")
+  Likelihoods[c(Ancestor_all, Bifurcata, Serpentis, Turtle, Crocodyla, Aves, Passeriformes, Birds_and_Croco)+leaf_size,] -> Ancestor_info
+  rownames(Ancestor_info) = c("Ancestor_all", "Bifurcata", "Serpentis", "Turtle", "Crocodyla", "Aves", "Passeriformes", "Birds-Croco")
+  round(Ancestor_info,2)
   
   #Use the LL of interest for making piecharts
   data_piechart = LL_nodes[c(Ancestor_all,Turtle,Serpentis,Bifurcata,Crocodyla,Aves,Passeriformes,Testudines2,Testudines3,Testudines4,Testudines4,Testudines6),]
@@ -94,6 +107,8 @@ Ancestral_state = function(Path_data = "Diapsida_table.tsv"){
   Phylopic =c(Turtle_ID, Serp_ID,Squamata_ID, Croco_ID,Ave_Id, Pass_id)
   test = tibble(node=c(Turtle,Serpentis,Bifurcata,Crocodyla,Aves,Passeriformes) + leaf_size, phylopic = Phylopic)
   #Make tree plot
+  print("Making plot of diapsida tree")
+  
   PAL =  c("#DD8D29", "#E2D200", "#46ACC8", "#9986A5", "#B40F20")
   dataset %>% mutate(Insertion = ifelse(X2 == "-", "Absent", "Present")) -> ds
   p = ggtree(Tree3, layout="fan",branch.length="none") 
@@ -102,6 +117,23 @@ Ancestral_state = function(Path_data = "Diapsida_table.tsv"){
   p3 %<+% test + geom_nodelab(aes(image=phylopic),alpha=1, geom="phylopic", color=PAL[3], size=0.04) -> p4
   p4 + labs(colour = "Status Position 174") -> p4
   
+  print("Printing labeled tree")
+  print(p4)
+  ggsave("FIGURES/Labeled_tree.pdf", p4, scale=4)
+  ggsave("FIGURES/Labeled_tree.png", p4, scale=4)
+  
+  p = ggtree(Tree3, layout="fan",branch.length="none") 
+  p %<+% ds  +  theme(legend.position="bottom") + aes(color=factor(Insertion)) +
+    labs(color = "ND3-174") -> p2
+  p2 + geom_cladelabel(Turtle+leaf_size, "Testudines", offset=13, barsize=1, angle=-50, offset.text=2.5, hjust=0.5, fontsize=2) +  geom_cladelabel(Serpentis+ leaf_size, "Serpentis", offset=7, barsize=0.5, angle=-65, offset.text=2, hjust=0.5, fontsize=2) + geom_cladelabel(Bifurcata+ leaf_size, "Squamata", offset=13, barsize=1, angle=-78, offset.text=4.5, hjust=0.5, fontsize=2) + geom_cladelabel(Crocodyla+ leaf_size, "Crocodilia", offset=13, barsize=1, angle=-45, offset.text=6, hjust=0.5, fontsize=2) + geom_cladelabel(Aves+ leaf_size, "Aves", offset=13, barsize=1, angle=113, offset.text=3.5, hjust=0.5, fontsize=2) + geom_cladelabel(Passeriformes+ leaf_size, "Passeriformes", offset=7, barsize=0.5, angle=160, offset.text=2, hjust=0.5, fontsize=2)  ->p3
+  p3 %<+% test + geom_nodelab(aes(image=phylopic),alpha=1, geom="phylopic", color=PAL[3], size=0.04) -> p4_2
+  p4_2 + labs(colour = "Status Position 174") -> p4_2
+  
+  print("Printing unlabeled tree")
+  print(p4_2)
+  ggsave("FIGURES/UnLabeled_tree.pdf", p4_2, scale=4)
+  ggsave("FIGURES/UnLabeled_tree.png", p4_2, scale=4)
+  print("Splitting entries per taxonomy")
   #Label taxonomy for all Speecies
   extract.clade(Tree3, node=(Turtle + leaf_size)) -> All_testudinest
   extract.clade(Tree3,node=Aves+leaf_size) -> All_birdst
@@ -121,7 +153,7 @@ Ancestral_state = function(Path_data = "Diapsida_table.tsv"){
   Data_birds %>% mutate(Order="Birds", Gap = ifelse(X2=="-", "yes","no")) -> Com2
   Data_lizards %>% mutate(Order="Lizards", Gap = ifelse(X2=="-", "yes","no")) -> Com3
   Data_crocodile %>% mutate(Order="Crocodile", Gap = ifelse(X2=="-", "yes","no")) -> Com4
-  
+  print("Saving metadata with group information at 'Metadata_sp.csv', this information can be use for running the Shanon script")
   rbind(Com1,Com2,Com3,Com4) -> complete_meta
   write.csv(x = complete_meta, file = "Metadata_sp.csv") 
   
@@ -129,6 +161,7 @@ Ancestral_state = function(Path_data = "Diapsida_table.tsv"){
   ############################################################################
   #########Find all cases where transitions happen in birds and turtles#######
   ###########################################################################
+  print("Finding transitions between states in Birds and turtles")
   find_transitions = function(Parent_node,threshold, STATES=c("-", "A","T","C","G")){
     #Funtion for finding transition cases. From a parental node, e.g the bird ancestor, takes al descendants and go one by one checking if their most recent ancestor is predicted with a likelihood of at least threshold to have the insertion.
     Transition =vector()
@@ -174,10 +207,13 @@ Ancestral_state = function(Path_data = "Diapsida_table.tsv"){
     return(Transition)
   }
   #Fint the transitions for turtles and for birds in two different minimal threshold of marginal likelihood.
+  print("Tranisitions in turtle above 0.6 likelihood")
   t1 = find_transitions(Parent_node = Turtle + leaf_size, threshold = 0.6)
+  print("Tranisitions in turtle above 0.9 likelihood")
   t12 = find_transitions(Parent_node = Turtle + leaf_size, threshold = 0.9)
-  
+  print("Tranisitions in Birds above 0.6 likelihood")
   t2 = find_transitions(Parent_node = Aves + leaf_size, threshold = 0.6)
+  print("Tranisitions in Birds above 0.9 likelihood")
   t22 = find_transitions(Parent_node = Aves + leaf_size, threshold = 0.9)
   
   Transitions_df = tibble(Transition = t1, species = "Turtle", threshold = 0.6)
@@ -186,12 +222,76 @@ Ancestral_state = function(Path_data = "Diapsida_table.tsv"){
   Transitions_df4 = tibble(Transition = t22, species = "Bird", threshold = 0.9)
   
   Transitions_df_total = rbind(rbind(rbind(Transitions_df, Transitions_df2),Transitions_df3), Transitions_df4)
+  print("Summarizing number of transitions per clade")
+  Transitions_df_total %>% group_by(Transition,species, threshold) %>% summarise(n()) -> SAVE_transitions
   Transitions_df_total %>% group_by(Transition,species, threshold) %>% summarise(n()) %>% print()
- 
- return(list(Data_birds, Data_Passeriformes))  
+  
+  print("Producing testudines and aves phylogenetic tree")
+  
+  
+ ############################
+ #########TESTDUINES TREE####
+ ############################
+  Subset = Data_testudines
+  keep.tip(Tree3, Subset$X1) -> Tr
+  
+  Desc = Descendants(Tree3, Turtle+leaf_size, type = "all")
+  Turtle_leafs = Desc[Desc<leaf_size]
+  Desc = Desc[Desc>leaf_size]
+  Desc = c(Desc,Turtle+leaf_size)
+  Desc = sort(Desc)
+  #Desc = c(Desc, Turtle_leafs)
+  
+  LL_nodes = Likelihoods[Desc,]
+  LL_nodes = as.data.frame(LL_nodes) 
+  data_piechart = cbind(LL_nodes, seq(dim(Subset)[1]+1,dim(Subset)[1]+Tr$Nnode))
+  
+  STATES = c("-", "A","T","C","G")
+  colnames(data_piechart) =c(STATES, "node")
+  data_piechart = as_tibble(data_piechart)
+  
+  print("Unlabelled turtle tree")
+  p = ggtree(Tr, layout="rectangular",branch.length="none") 
+  p %<+% Subset  + theme(legend.position="bottom") + labs(color = "ND3-174") +
+    geom_tippoint(aes(x=x+1,color=factor(X2)),size=0.3,na.rm=TRUE) + 
+    scale_color_manual(values=c(PAL[2], PAL[1], PAL[3], PAL[4], PAL[5])) -> p2
+  pies = nodepie(data_piechart, cols=1:5, color =c(PAL[2], PAL[1], PAL[3], PAL[4], PAL[5]))
+  ggtree::inset(p2, pies,width=0.06, height=0.06) -> p3_turtle ###THE ERROR LINE
+  print(p3_turtle)
+  ggsave(plot = p3_turtle, filename  = "FIGURES/Testudines_tree.png", scale = 2)
+  ggsave(plot = p3_turtle, filename  = "FIGURES/Testudines_tree.pdf", scale = 2)
+  
+  
+  print("Labelled turtle tree")
+  p = ggtree(Tr, layout="rectangular",branch.length="none") 
+  p %<+% Subset  + theme(legend.position="bottom") + labs(color = "ND3-174") +
+    geom_tiplab(aes(color = factor(X2)), geom = "text", size=0.75) + 
+    scale_color_manual(values=c(PAL[2], PAL[1], PAL[3], PAL[4], PAL[5])) -> p2
+  pies = nodepie(data_piechart, cols=1:5, color =c(PAL[2], PAL[1], PAL[3], PAL[4], PAL[5]))
+  ggtree::inset(p2, pies,width=.06, height=.06) -> p3_turtle
+  
+  ggsave(plot = p3_turtle, filename  = "FIGURES/Testudines_tree_labeled.png", scale= 2)
+  ggsave(plot = p3_turtle, filename  = "FIGURES/Testudines_tree_labeled.pdf", scale = 2)
+  
+  #Prepare tips
+  #select(unique(Subset), X2) %>% as_vector() -> x
+  #names(x) = unique(Subset)$X1
+  #Prepare nodes
+  #y = as.matrix(data_piechart[,1:5])
+  #names(y) = data_piechart[6]
+  
+  #Tr
+  #setNames(c("red","yellow","green", "blue","purple"),c("-","a", "t", "c","g")) -> PAL_cutre
+  #dotTree(Tr,as.matrix(x)[Tr$tip.label,], legend = F, fsize=0.7,ftype="i",use.edge.length = FALSE, colors=PAL_cutre)
+  #nodelabels(pie=y,adj=c(0.5,0.9),cex=0.5)
+  
+  
+    
+  print("Finishing function. Returning tibble of birds and tibble of passeriformes")
+  return(list(Data_birds, Data_Passeriformes, SAVE_transitions))  
 }
 
-Ancestral_state_parsimony = unction(Path_data = "Diapsida_table.tsv"){
+Ancestral_state_parsimony = function(Path_data = "Diapsida_table.tsv",Path_tree="Total_tree.tree"){
   dataset = read_tsv(Path_data,col_names=F)
   Tree3 = phyloseq::read_tree("Total_tree.tree")
   
@@ -216,16 +316,28 @@ Ancestral_state_parsimony = unction(Path_data = "Diapsida_table.tsv"){
   
   states = as.integer(states)
   Tree3$edge.length = NULL #Otol tree has 0s in the branch lengths. The model fails if that is the case.
+  
+  print("Fitting maximum parsimony model of ND3-174 ancestral state")
+  #reconstruction = castor::hsp_max_parsimony(tree = Tree3,tip_states = states)
+  #Phangorn
+  #phyDat(as.matrix(states2), type ="USER", levels=c("2", "1") ) -> CHE
+  #phangorn::ancestral.pars(Tree3,CHE,type="MPR", return="prob") -> answer
+  #Ape
+  Out =  Tree3$tip.label[length(Tree3$tip.label)]
+  MPR(phy=unroot(multi2di(Tree3)), x=states, outgroup = Out) -> Predictions
+  as.data.frame(Predictions) %>% rownames_to_column("Node")    %>% as_tibble() %>% filter(Node %in% Tree3$node.label) %>%
+    mutate(V1 = ifelse(lower == 1,1,0), V2 = ifelse(upper == 1,0,1), V1 = ifelse(upper!=lower, 0.5, V1 ),  V2= ifelse(upper!=lower, 0.5,V2)) -> Predictions
+  
+  Predictions[match(Tree3$node.label, Predictions$Node),] %>% select(V1,V2) -> Predictions
+  tibble(V1 = states == 1, V2 = states== 2) %>% mutate(V1 = ifelse(V1==1, 1, 0), V2 = ifelse(V2==2, 1, 0)) -> tip_status
+  Predictions[1,] = c(1,0)
+  rbind(tip_status, Predictions) -> Likelihoods
 
-  reconstruction = castor::hsp_max_parsimony(tree = Tree3,tip_states = states)
-  #All likelihoods
-  Likelihoods = reconstruction$likelihoods
-  
-  
+  print("Fitting maximum likelihood model of ND3-174 ancestral state for two states")
   reconstruction2 = castor::hsp_mk_model(tree = Tree3,tip_states = states, rate_model="ER",Nthreads = 3)
   
   #All likelihoods
-  Likelihoods = reconstruction$likelihoods
+  #Likelihoods = reconstruction$likelihoods
   Likelihoods_mk = reconstruction2$likelihoods
   #Looking for Likelihoods only on nodes, positions after the leafs
   leaf_size = length(Tree3$tip.label)
@@ -233,9 +345,27 @@ Ancestral_state_parsimony = unction(Path_data = "Diapsida_table.tsv"){
   LL_nodes_mk = Likelihoods_mk[(length(states)+1):dim(Likelihoods_mk)[1],]
   
   #Cases were the 0.9 threshold does not agree with parsimony 30/3091
+  print("Comparison with 2-state ML model")
   as_tibble(LL_nodes_mk) %>% mutate(V1 = ifelse(V1 > 0.9, 1, V1), V1 = ifelse(V1 < 0.1, 0, V1),V2 = ifelse(V2 > 0.9, 1, V2), V2 = ifelse(V2 < 0.1, 0, V2) ) -> hsp_check
   as_tibble(LL_nodes) -> parsimony_check
   sum((hsp_check$V1 == parsimony_check$V1) == F)
+  
+  
+  #Check different nodes
+  Turtle = which(grepl("Testudines",Tree3$node.label))  #Turtles, Testudines
+  Serpentis = which(grepl("mrcaott1662ott20148", Tree3$node.label)) #Serpentis 
+  Bifurcata = which(grepl("ott4945781", Tree3$node.label)) #Squamata
+  Crocodyla = which(grepl("mrcaott31216ott35864", Tree3$node.label)) #crocodylia
+  Aves = which(grepl("Aves", Tree3$node.label)) #Aves
+  Passeriformes = which(grepl("Passeriformes", Tree3$node.label)) #passserines
+  Ancestor_all = which(grepl("mrcaott59ott1662", Tree3$node.label))
+  
+  print("Assessed Likelihood at each clade ancestor")
+  colnames(Likelihoods) = c("-","insertion")
+  Likelihoods[c(Ancestor_all, Bifurcata, Serpentis, Turtle, Crocodyla, Aves, Passeriformes)+leaf_size,] -> Ancestor_info
+  rownames(Ancestor_info) = c("Ancestor_all", "Bifurcata", "Serpentis", "Turtle", "Crocodyla", "Aves", "Passeriformes")
+  round(Ancestor_info,2)
+  
   
   
   ############################################################################
@@ -248,11 +378,11 @@ Ancestral_state_parsimony = unction(Path_data = "Diapsida_table.tsv"){
     #Get P for all those descendents
     LLH = Like[Desc,]
     as_tibble(LLH) %>% mutate(N=Desc) -> LLH
+    Desc = c(Desc[Desc>leaf_size], Desc[Desc<leaf_size])
     #Go descendant by descendant and check if current state did change from its closest ancestor
     for (n in Desc){
-      Node = Ancestors(Tree3,n)
+      Node = Ancestors(Tree3,n, type="parent")
       if (length(Node) == 0){ next}
-      Node = Node[1]
       Prob = filter(LLH,N==n)
       Prob_ancest = filter(LLH,N==Node)
       if (dim(Prob_ancest)[1] == 0){ next}
@@ -278,16 +408,12 @@ Ancestral_state_parsimony = unction(Path_data = "Diapsida_table.tsv"){
         }else{ Name = Tree3$tip.label[n]}
         Transition = c(Transition, paste(c(state_a,state),collapse=""))
         #if(n<length(Tree3$tip.label)+1){
-          print(paste(c("Transition",state_a, "to", state, "in node",n, "named", Name),collapse=" "))}
+        print(paste(c("Transition",state_a, "to", state, "in node",n, "named", Name),collapse=" "))}
       #}
       
     }
     return(Transition)
   }
-  Ancestor_all = which(grepl("mrcaott59ott1662", Tree3$node.label))
-  Turtle = which(grepl("Testudines",Tree3$node.label))  #Turtles, Testudines
-  Aves = which(grepl("Aves", Tree3$node.label)) #Aves
-  Passeriformes = which(grepl("Passeriformes", Tree3$node.label))
   
   t1 = find_transitions(Parent_node = Turtle + leaf_size, threshold = 0.9)
   lapply(t1, FUN = function(x){ substr(x,1,1) == "-" }) %>% as_vector() -> gains ; sum(gains) ; length(t1) - sum(gains)
@@ -298,16 +424,17 @@ Ancestral_state_parsimony = unction(Path_data = "Diapsida_table.tsv"){
   lapply(t2, FUN = function(x){ substr(x,1,1) == "-" }) %>% as_vector() -> gains ; sum(gains)  ; length(t2) - sum(gains)
   
   t22 = find_transitions(Parent_node = Aves + leaf_size, threshold = 0.9, Like=Likelihoods_mk)
+  lapply(t22, FUN = function(x){ substr(x,1,1) == "-" }) %>% as_vector() -> gains ; sum(gains)  ; length(t22) - sum(gains)
   #Birds have only 5 transitions which are different
   
   #All transitions
   t3 = find_transitions(Parent_node = Ancestor_all + leaf_size, threshold = 0.9)
   lapply(t3, FUN = function(x){ substr(x,1,1) == "-" }) %>% as_vector() -> gains ; sum(gains) ; length(t3) - sum(gains)
-  
+  return(t3)
 }
 
 
-Frequency_insertion_bird_order = function(Data_birds, Data_Passeriformes){
+Frequency_insertion_bird_order = function(Data_birds, Data_Passeriformes, orders_info = "Howard_Moore_taxonomy.tsv", Jarvis_tree="Chronogram01.TENT.ExAML.tre"){
   #Data_birds and Data_Passeriformes can be obtained by returning them from the function Ancestral_state()
   
   
@@ -315,7 +442,7 @@ Frequency_insertion_bird_order = function(Data_birds, Data_Passeriformes){
   ####################Study bird orders####################
   #########################################################
   
-  orders_info = read_tsv("All_bird_orders.tsv", col_names=F) #Table of three columns. Column 1 bird taxonomy, 2. Bird Family, 3. Bird Order
+  orders_info = read_tsv(orders_info, col_names=F) #Table of three columns. Column 1 bird taxonomy, 2. Bird Family, 3. Bird Order
   
   #Add taxonomical information for records that have NA. 
   orders_info %>% mutate(X3 = ifelse(X1 %in% Data_Passeriformes$X1, "Passeriformes",X3)) -> orders_info
@@ -335,8 +462,8 @@ Frequency_insertion_bird_order = function(Data_birds, Data_Passeriformes){
   orders_info %>% mutate(X3 = ifelse(X1 == "Mullerornis_agilis", "Aepyornithiformes", X3)) -> orders_info	
   
   #Add order information to the table with ND3-174 status on birds
-  orders_info %>% arrange(X1) %>% filter(X1 %in% Data_birds$X1) -> orders_info
-  Data_birds %>% mutate(Family = orders_info$X2, Order= orders_info$X3) -> Data_birds
+  unique(orders_info) %>% arrange(X1) %>% filter(X1 %in% Data_birds$X1) -> orders_info
+  unique(Data_birds) %>% arrange(X1) %>% filter() %>% mutate(Family = orders_info$X2, Order= orders_info$X3) -> Data_birds
   
   ####Get information about Frequency of insertion per bird order
   Data_birds %>% group_by(Order, X2) %>% summarise(Number = n()) %>% spread(X2, Number) -> Information_birds_orders
@@ -351,8 +478,8 @@ Frequency_insertion_bird_order = function(Data_birds, Data_Passeriformes){
   ################################################
   #####Make figure based on Jarvis topology#######
   ################################################
-  Jarvis = read.tree("Chronogram01.TENT.ExAML.tre")
-  INFO = read_delim("Trait_data2.csv", delim = ";")
+  Jarvis = read.tree(Jarvis_tree)
+  INFO = read_delim("Howard_Moore_taxonomy.csv", delim = ";") #Howard&Moore 
   
   new_lab = vector()
   n = 0
@@ -397,14 +524,16 @@ Frequency_insertion_bird_order = function(Data_birds, Data_Passeriformes){
   facet_plot(p, panel="Frequency absence of insertion", data=Order_insertion, geom= geom_barh, mapping=aes(x=Order_insertion$Frq_gap),stat="identity") -> p2
   facet_plot(p2,panel="Frequency absence of insertion", data=Order_insertion, geom=geom_text, mapping=aes(x= -0.05, label=Order_insertion$Total), size=1.5 ) -> p3
   print(p3)
+  ggsave(plot = p3, "FIGURES/Bird_orders.pdf", scale=2)
+  ggsave(plot = p3, "FIGURES/Bird_orders.png", scale=2)
 }
 
-Process_entrophy = function(){
+Process_entrophy = function(Shanon_file = "Shanon.tsv"){
   #Shannon.tsv is the output from Calculate_diversity.py
   ################################
   #####Plot entrophy #############
   ###############################
-  data_entrophy = read_tsv("Shanon.tsv")
+  data_entrophy = read_tsv(Shanon_file)
   data_entrophy %>% mutate(Information = log2(4) - Entropy, Information_codon = log2(4) - codon_bin) -> data_entrophy
   data_entrophy %>% filter(Position == 174)
   
@@ -420,6 +549,7 @@ Process_entrophy = function(){
   mean(R2_gap$Information)/mean(R2_insertion$Information) -> Fold_change
   print("Testing difference in conservation between sequences with insertion and without it")
   print(Test)
+  print(Fold_change)
   
   Legend = c(NULL)
   for (n in seq(1,dim(data_entrophy)[1])){
@@ -434,16 +564,19 @@ Process_entrophy = function(){
     geom_hline(yintercept= 164, linetype="dashed",  color = "black", size=0.5) + 
     geom_hline(yintercept= 180, linetype="dashed",  color = "black", size=0.5)+ coord_flip()+
     labs(fill = "Information content (to the cube)") + ylab(label = "ND3 position") -> Information_content
-  return(Information_content)
+  
+  print(Information_content)
+  ggsave("FIGURES/Information_content.pdf", Information_content, scale= 4)
+  ggsave("FIGURES/Information_content.png",Information_content,scale = 4)
 }
 
-Study_codon_frequencies(){
+Study_codon_frequencies = function(Path_file = "codons.tsv"){
   #condons.tsv is obtained from Study_conds_interstion2.py
   ###############################
   #######Codon analysis##########
   ###############################
   
-  codons = read_tsv("codons.tsv")
+  codons = read_tsv(Path_file)
   codons %>% filter(! Codon == "---") -> codons
   
   codons %>% mutate(Codon_position = ifelse(Sequence=="regular",Codon_position-4,Codon_position)) -> codons
@@ -454,31 +587,33 @@ Study_codon_frequencies(){
   codons$Codon_position = factor(codons$Codon_position,levels(codons$Codon_position)[c(3,2,1,4,5,6,7,8)])
   
   
-                                 
-   N=names(getGeneticCode("SGC1"))
-   V = as.vector(getGeneticCode("SGC1"))
-   
-   tibble(codon = N, AminoAcid=V) -> amino_translation
-   v = vector()
-   for (value in codons$Codon){
-     amino_translation %>% filter(codon == toupper(value)) -> Value
-     AA = Value$AminoAcid
-     if (length(AA) == 0){v = c(v,NA)}
-     else{ v = c(v,AA)}
-   }
-   
-   codons %>% mutate(AminoAcid = v) -> codons
-   codons %>% ggplot(aes(group=factor(Codon),x=Codon_position,y=Counts, fill=AminoAcid,label=Codon)) + 
-     geom_bar(stat="identity",position='dodge',col="black") + facet_wrap(~Sequence, scales="free",dir="v") +
-     theme_bw() + geom_text_repel(aes(x=Codon_position), size= 3,position = position_dodge(width = 1),direction="y") -> fig_codon
-   return(fig_codon)
+  
+  N=names(getGeneticCode("SGC1"))
+  V = as.vector(getGeneticCode("SGC1"))
+  
+  tibble(codon = N, AminoAcid=V) -> amino_translation
+  v = vector()
+  for (value in codons$Codon){
+    amino_translation %>% filter(codon == toupper(value)) -> Value
+    AA = Value$AminoAcid
+    if (length(AA) == 0){v = c(v,NA)}
+    else{ v = c(v,AA)}
+  }
+  
+  codons %>% mutate(AminoAcid = v) -> codons
+  codons %>% ggplot(aes(group=factor(Codon),x=Codon_position,y=Counts, fill=AminoAcid,label=Codon)) + 
+    geom_bar(stat="identity",position='dodge',col="black") + facet_wrap(~Sequence, scales="free",dir="v") +
+    theme_bw() + geom_text_repel(aes(x=Codon_position), size= 3,position = position_dodge(width = 1),direction="y") -> fig_codon
+  ggsave("FIGURES/Codon_freq.pdf")
+  ggsave("FIGURES/Codon_freq.png")
+  print(fig_codon)
 }
 
 
-Ancestral_state(data) -> bird_frequency
-Frequency_insertion_bird_order(bird_frequency[[1]], bird_frequency[[2]])
-Process_entrophy()
-Study_Codon_frequencies()
 
+Ancestral_state() -> bird_frequency
+Ancestral_state_parsimony() -> Total_transitions
 
-
+Frequency_insertion_bird_order()
+Process_entrophy() 
+Study_codon_frequencies() 
